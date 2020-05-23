@@ -95,8 +95,10 @@ async function body(req: Request, res: Response, next: Middleware): Promise<void
     const buffer = new Uint8Array(req.contentLength);
     await req.request.body.read(buffer);
     const decoder = new TextDecoder();
+    const body = decoder.decode(buffer);
+    const isJSON = req.headers?.has('Content-Length');
 
-    req.body = decoder.decode(buffer);
+    req.body = isJSON ? JSON.parse(body) : body;
 
     next();
 }
