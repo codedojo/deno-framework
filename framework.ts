@@ -1,7 +1,7 @@
 import { listenAndServe, ServerRequest } from 'https://deno.land/std/http/server.ts';
-import { match, Match, MatchFunction } from 'https://deno.land/x/path_to_regexp/mod.ts';
+import { match, MatchFunction } from 'https://deno.land/x/path_to_regexp/mod.ts';
 
-export { App, Request, body };
+export { App, Request, Response, body };
 
 type Middleware = (error?: Error) => void;
 type RequestHandler = (req: Request, res: Response, next: Middleware) => void;
@@ -31,46 +31,53 @@ interface RouteMap {
     DELETE: Route[];
 }
 
-class Request {
+interface Request {
     request: ServerRequest;
     method: string;
     url: string;
+    headers?: Headers;
     contentLength: number | null;
-    params: any = {};
-    body: string | object | null = null;
-
-    constructor(request: ServerRequest) {
-        this.request = request;
-        this.method = request.method;
-        this.url = request.url;
-        this.contentLength = request.contentLength;
-    }
+    params?: object;
+    body?: string | object;
 }
 
-class Response {
+interface Response {
     headers?: Headers;
-    status: number = 200;
+    status: number;
+    send(data: string): Promise<void>;
+    json(data: object): Promise<void>;
+}
 
-    constructor(public request: ServerRequest) { }
+const Request = (request: ServerRequest): Request => ({
+    request,
+    method: request.method,
+    url: request.url,
+    headers: request.headers,
+    contentLength: request.contentLength
+});
+
+const Response = (request: ServerRequest): Response => ({
+    headers: request.headers,
+    status: 200,
 
     send(data: string) {
-        return this.request.respond({
+        return request.respond({
             body: data,
             headers: this.headers,
             status: this.status
         });
-    }
+    },
 
     json(data: object) {
-        this.headers?.set('Content-Type', 'application/json');
+        request.headers?.set('Content-Type', 'application/json');
 
-        return this.request.respond({
+        return request.respond({
             body: JSON.stringify(data),
             headers: this.headers,
             status: this.status
         });
     }
-}
+});
 
 function errorHandler(error: Error, req: Request, res: Response, next?: Middleware) {
     res.status = 500;
@@ -105,8 +112,8 @@ const App = (): App => {
     };
 
     async function handleRequest(request: ServerRequest) {
-        const req = new Request(request);
-        const res = new Response(request);
+        const req = Request(request);
+        const res = Response(request);
         const stack = [...middleware, ...routes[request.method]];
 
         function next(error?: Error): void {
@@ -116,7 +123,7 @@ const App = (): App => {
 
             if (!route) return notFoundHandler(req, res);
 
-            const match: Match = route.match(req.url);
+            const match = route.match(req.url);
 
             if (!match) return next(error);
 
